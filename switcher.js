@@ -4,8 +4,10 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
     window.__TAB_SWITCHER_OVERLAY_LOADED__ = true;
 
     const ROOT_ID = "__tab_switcher_overlay_root__";
-    const PREVIEW_WIDTH = 400;
-    const PREVIEW_HEIGHT = 225;
+    const DEFAULT_PREVIEW_WIDTH = 400;
+    const PREVIEW_WIDTH_MIN = 280;
+    const PREVIEW_WIDTH_MAX = 640;
+    const PREVIEW_STORAGE_KEY = "previewWidth";
     const previewResizeCache = new Map();
 
     let tabs = [];
@@ -17,6 +19,29 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
     let overlay = null;
     let grid = null;
     let viewportListenersBound = false;
+    let previewWidth = DEFAULT_PREVIEW_WIDTH;
+
+    initializeSettings().catch((error) => {
+        console.warn("Failed to initialize switcher settings:", error);
+    });
+
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== "sync" || !changes?.[PREVIEW_STORAGE_KEY]) {
+            return;
+        }
+
+        const nextWidth = clampPreviewWidth(changes[PREVIEW_STORAGE_KEY].newValue);
+        if (nextWidth === previewWidth) {
+            return;
+        }
+
+        previewWidth = nextWidth;
+        previewResizeCache.clear();
+        applyPreviewWidthVariables();
+        if (visible) {
+            render();
+        }
+    });
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (!message || typeof message.type !== "string") {
@@ -158,6 +183,7 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
         if (!root || !overlay) {
             return;
         }
+        applyPreviewWidthVariables();
         syncViewportSize();
         bindViewportListeners();
         visible = true;
@@ -203,6 +229,7 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
 
         overlay = shadowRootRef.querySelector(".ts-overlay");
         grid = shadowRootRef.querySelector(".ts-grid");
+        applyPreviewWidthVariables();
     }
 
     function bindViewportListeners() {
@@ -426,13 +453,18 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
             throw new Error("Missing preview source");
         }
 
-        const cached = previewResizeCache.get(sourceDataUrl);
+        const cacheKey = `${previewWidth}|${sourceDataUrl}`;
+        const cached = previewResizeCache.get(cacheKey);
         if (cached) {
             return cached;
         }
 
-        const normalized = await resizePreviewDataUrl(sourceDataUrl, PREVIEW_WIDTH, PREVIEW_HEIGHT);
-        previewResizeCache.set(sourceDataUrl, normalized);
+        const normalized = await resizePreviewDataUrl(
+            sourceDataUrl,
+            previewWidth,
+            getPreviewHeight(previewWidth)
+        );
+        previewResizeCache.set(cacheKey, normalized);
 
         // Keep cache bounded to avoid unbounded growth during long sessions.
         if (previewResizeCache.size > 120) {
@@ -516,5 +548,35 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
 
     function sendMessage(message) {
         return chrome.runtime.sendMessage(message);
+    }
+
+    async function initializeSettings() {
+        try {
+            const result = await chrome.storage.sync.get(PREVIEW_STORAGE_KEY);
+            previewWidth = clampPreviewWidth(result?.[PREVIEW_STORAGE_KEY]);
+            applyPreviewWidthVariables();
+        } catch {
+            previewWidth = DEFAULT_PREVIEW_WIDTH;
+        }
+    }
+
+    function clampPreviewWidth(value) {
+        if (typeof value !== "number" || Number.isNaN(value)) {
+            return DEFAULT_PREVIEW_WIDTH;
+        }
+
+        return Math.min(PREVIEW_WIDTH_MAX, Math.max(PREVIEW_WIDTH_MIN, value));
+    }
+
+    function getPreviewHeight(width) {
+        return Math.round((width * 9) / 16);
+    }
+
+    function applyPreviewWidthVariables() {
+        if (!root) {
+            return;
+        }
+
+        root.style.setProperty("--ts-preview-width", `${previewWidth}px`);
     }
 }

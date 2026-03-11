@@ -3,9 +3,16 @@
     "name": "Tab Switcher Overlay",
     "version": "1.0.0",
     "description": "Alt+Tab-like tab switcher overlay for Chrome tabs.",
+    "icons": {
+        "16": "icon.png",
+        "32": "icon.png",
+        "48": "icon.png",
+        "128": "icon.png"
+    },
     "permissions": [
         "tabs",
-        "scripting"
+        "scripting",
+        "storage"
     ],
     "host_permissions": [
         "<all_urls>"
@@ -30,7 +37,12 @@
         }
     },
     "action": {
-        "default_title": "Open Tab Switcher"
+        "default_title": "Open Tab Switcher",
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icon.png",
+            "32": "icon.png"
+        }
     },
     "content_scripts": [
         {

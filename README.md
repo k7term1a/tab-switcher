@@ -29,7 +29,15 @@
 
 反向切換快捷鍵是 `Alt+W`。
 
-你可以到 `chrome://extensions/shortcuts` 修改為自己習慣的組合鍵。
+你可以在 extension 的 popup 中點擊「開啟快捷鍵設定頁」，或直接到 `chrome://extensions/shortcuts` 修改為自己習慣的組合鍵。
+
+## Popup 設定
+
+點擊瀏覽器工具列上的 extension 圖示後，可開啟設定 popup：
+
+- 調整分頁預覽寬度（預設 `400px`，高度會維持 16:9）
+- 查看目前快捷鍵
+- 一鍵開啟快捷鍵設定頁（`chrome://extensions/shortcuts`）
 
 注意:
 

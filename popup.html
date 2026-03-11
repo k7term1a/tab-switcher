@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Tab Switcher 設定</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <main class="popup">
+        <h1 class="title">Tab Switcher 設定</h1>
+
+        <section class="section">
+            <h2>分頁預覽尺寸</h2>
+            <div class="field">
+                <span class="field-label">預覽寬度</span>
+                <div class="range-row">
+                    <label class="visually-hidden" for="previewWidth">預覽寬度滑桿</label>
+                    <input id="previewWidth" type="range" min="280" max="640" step="20">
+                    <div class="number-input-wrap">
+                        <label class="visually-hidden" for="previewWidthNumber">預覽寬度數字輸入</label>
+                        <input id="previewWidthNumber" type="number" min="280" max="640" step="20">
+                        <span>px</span>
+                    </div>
+                </div>
+            </div>
+            <p class="hint">高度會依照 16:9 自動調整。</p>
+        </section>
+
+        <section class="section">
+            <h2>快捷鍵設定</h2>
+            <p class="hint">Chrome 限制擴充功能無法直接改快捷鍵，請在快捷鍵頁面修改。</p>
+            <ul id="shortcutList" class="shortcut-list"></ul>
+            <button id="openShortcuts" type="button" class="button">開啟快捷鍵設定頁</button>
+        </section>
+
+        <p id="saveState" class="save-state" aria-live="polite"></p>
+    </main>
+
+    <script src="popup.js"></script>
+</body>
+</html>

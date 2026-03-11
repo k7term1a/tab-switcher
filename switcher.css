@@ -6,6 +6,7 @@
     --ts-muted: #b4bac4;
     --ts-focus: #d7dbe2;
     --ts-focus-soft: rgba(215, 219, 226, 0.2);
+    --ts-preview-width: 400px;
     position: fixed;
     top: 0;
     left: 0;
@@ -50,7 +51,7 @@
     max-height: min(calc(var(--ts-overlay-height, 100dvh) - 40px), 920px);
     padding: 24px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 400px));
+    grid-template-columns: repeat(auto-fit, minmax(min(320px, var(--ts-preview-width, 400px)), var(--ts-preview-width, 400px)));
     justify-content: center;
     align-items: start;
     gap: 20px;
@@ -108,7 +109,7 @@
     transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
     color: var(--ts-text);
     position: relative;
-    max-width: 400px;
+    max-width: var(--ts-preview-width, 400px);
     align-self: start;
 }
 
@@ -156,7 +157,7 @@
         width: min(100%, 92vw);
         max-height: min(calc(var(--ts-overlay-height, 100dvh) - 30px), 82dvh);
         padding: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 400px));
+        grid-template-columns: repeat(auto-fit, minmax(240px, min(var(--ts-preview-width, 400px), 92vw)));
         justify-content: center;
     }
 }
