@@ -26,7 +26,7 @@ body {
     background: rgba(255, 255, 255, 0.02);
 }
 
-.section + .section {
+.section+.section {
     margin-top: 10px;
 }
 
@@ -106,7 +106,7 @@ body {
     font-size: 12px;
 }
 
-.shortcut-list li + li {
+.shortcut-list li+li {
     margin-top: 4px;
 }
 

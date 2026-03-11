@@ -43,6 +43,8 @@
 
 - `Ctrl+Tab` 在 Chrome 屬於瀏覽器保留快捷鍵，通常無法被 extension 攔截或覆寫。
 - 如果你的環境無法設定 `Ctrl+Tab`，請使用其他組合，例如 `Alt+Q`、`Ctrl+Shift+.` 等。
+- Chrome Web Store（`https://chrome.google.com/webstore` / `https://chromewebstore.google.com`）屬於受限制頁面，會自動略過。
+- extension 會在注入前先檢測該分頁是否有可用權限（含 `file://` 權限狀態），沒有權限時會直接略過。
 - 由於瀏覽器 API 限制，無法在不切換分頁的情況下即時抓取所有背景分頁畫面；目前是快取曾可擷取的分頁截圖，其他分頁會顯示示意圖。
 - overlay 使用 Shadow DOM 渲染，樣式會和網頁本身的 root CSS 隔離，降低版面被網站樣式覆蓋的機率。
 

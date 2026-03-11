@@ -1,4 +1,8 @@
 const SESSION_TIMEOUT_MS = 2600;
+const BLOCKED_URL_PREFIXES = [
+    "https://chrome.google.com/webstore",
+    "https://chromewebstore.google.com",
+];
 
 let sourceWindowId = null;
 let overlayHostTabId = null;
@@ -210,6 +214,11 @@ async function ensureOverlayReady(tab) {
         return false;
     }
 
+    const hasAccess = await hasTabAccess(tab.url);
+    if (!hasAccess) {
+        return false;
+    }
+
     try {
         const response = await chrome.tabs.sendMessage(tab.id, { type: "ping-switcher" });
         if (response?.ok) {
@@ -233,7 +242,39 @@ function isInjectableUrl(url) {
         return false;
     }
 
-    return /^(https?|file):/i.test(url);
+    if (!/^(https?|file):/i.test(url)) {
+        return false;
+    }
+
+    const normalizedUrl = url.toLowerCase();
+    return !BLOCKED_URL_PREFIXES.some((prefix) => normalizedUrl.startsWith(prefix));
+}
+
+async function hasTabAccess(url) {
+    if (!url) {
+        return false;
+    }
+
+    if (url.startsWith("file:")) {
+        try {
+            return await chrome.extension.isAllowedFileSchemeAccess();
+        } catch {
+            return false;
+        }
+    }
+
+    try {
+        const origin = new URL(url).origin;
+        if (!/^https?:/i.test(origin)) {
+            return false;
+        }
+
+        return await chrome.permissions.contains({
+            origins: [`${origin}/*`],
+        });
+    } catch {
+        return false;
+    }
 }
 
 function isTabSwitchable(tab) {
