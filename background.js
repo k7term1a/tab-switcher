@@ -1,10 +1,8 @@
-const FINALIZE_DELAY_MS = 900;
-const SESSION_TIMEOUT_MS = 1300;
+const SESSION_TIMEOUT_MS = 2600;
 
-let switcherWindowId = null;
 let sourceWindowId = null;
+let overlayHostTabId = null;
 let selectedTabId = null;
-let finalizeTimer = null;
 let lastTriggerAt = 0;
 let cachedTabs = [];
 
@@ -32,6 +30,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             tabs: cachedTabs,
             selectedTabId,
             sourceWindowId,
+            isVisible: overlayHostTabId !== null,
         });
         return false;
     }
@@ -46,7 +45,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "set-selection") {
         selectedTabId = message.tabId;
         lastTriggerAt = Date.now();
-        resetFinalizeTimer();
         broadcastState().catch((error) => {
             console.error("Failed to update switcher state:", error);
         });
@@ -72,12 +70,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {
-    if (windowId === switcherWindowId) {
+    if (windowId === sourceWindowId) {
         resetSession();
     }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+    if (tabId === overlayHostTabId) {
+        resetSession();
+        return;
+    }
+
     if (!cachedTabs.length) {
         return;
     }
@@ -120,14 +123,12 @@ async function startOrAdvanceSwitcher() {
     }
 
     sourceWindowId = activeTab.windowId;
+    overlayHostTabId = activeTab.id;
     selectedTabId = tabs[nextIndex].id ?? null;
     lastTriggerAt = now;
 
-    cachedTabs = await buildTabCards(tabs, activeTab.windowId);
-
-    await ensureSwitcherWindow();
+    cachedTabs = buildTabCards(tabs);
     await broadcastState();
-    resetFinalizeTimer();
 }
 
 async function cycleSelection(direction) {
@@ -143,15 +144,12 @@ async function cycleSelection(direction) {
 
     selectedTabId = cachedTabs[nextIndex]?.id ?? selectedTabId;
     lastTriggerAt = Date.now();
-    resetFinalizeTimer();
     await broadcastState();
 }
 
 async function confirmSelection() {
-    clearFinalizeTimer();
-
     if (selectedTabId === null || sourceWindowId === null) {
-        await closeSwitcherWindow();
+        await hideOverlay();
         resetSession();
         return;
     }
@@ -163,110 +161,54 @@ async function confirmSelection() {
         console.warn("Failed to focus selected tab:", error);
     }
 
-    await closeSwitcherWindow();
+    await hideOverlay();
     resetSession();
 }
 
 async function cancelSwitcher() {
-    clearFinalizeTimer();
-    await closeSwitcherWindow();
+    await hideOverlay();
     resetSession();
 }
 
-function resetFinalizeTimer() {
-    clearFinalizeTimer();
-    finalizeTimer = setTimeout(() => {
-        confirmSelection().catch((error) => {
-            console.error("Failed to finalize switcher selection:", error);
-        });
-    }, FINALIZE_DELAY_MS);
-}
-
-function clearFinalizeTimer() {
-    if (finalizeTimer) {
-        clearTimeout(finalizeTimer);
-        finalizeTimer = null;
-    }
-}
-
-async function ensureSwitcherWindow() {
-    if (switcherWindowId !== null) {
-        try {
-            await chrome.windows.get(switcherWindowId);
-            return;
-        } catch {
-            switcherWindowId = null;
-        }
-    }
-
-    const sourceWindow = sourceWindowId !== null ? await chrome.windows.get(sourceWindowId) : null;
-    const width = Math.min(980, Math.max(720, Math.floor((sourceWindow?.width ?? 1200) * 0.78)));
-    const height = Math.min(680, Math.max(420, Math.floor((sourceWindow?.height ?? 800) * 0.72)));
-
-    const left = typeof sourceWindow?.left === "number" && typeof sourceWindow?.width === "number"
-        ? sourceWindow.left + Math.floor((sourceWindow.width - width) / 2)
-        : undefined;
-    const top = typeof sourceWindow?.top === "number" && typeof sourceWindow?.height === "number"
-        ? sourceWindow.top + Math.floor((sourceWindow.height - height) / 2)
-        : undefined;
-
-    const createdWindow = await chrome.windows.create({
-        url: chrome.runtime.getURL("switcher.html"),
-        type: "popup",
-        width,
-        height,
-        left,
-        top,
-        focused: true,
-    });
-
-    switcherWindowId = createdWindow.id ?? null;
-}
-
-async function closeSwitcherWindow() {
-    if (switcherWindowId === null) {
+async function broadcastState() {
+    if (overlayHostTabId === null) {
         return;
     }
 
     try {
-        await chrome.windows.remove(switcherWindowId);
+        await chrome.tabs.sendMessage(overlayHostTabId, {
+            type: "render-switcher",
+            tabs: cachedTabs,
+            selectedTabId,
+            sourceWindowId,
+            confirmOnAltRelease: true,
+        });
     } catch {
-        // Window may already be closed.
+        // Content script may not exist for restricted pages.
     }
-
-    switcherWindowId = null;
 }
 
-async function broadcastState() {
-    await chrome.runtime.sendMessage({
-        type: "render-switcher",
-        tabs: cachedTabs,
-        selectedTabId,
-        sourceWindowId,
-    });
+async function hideOverlay() {
+    if (overlayHostTabId === null) {
+        return;
+    }
+
+    try {
+        await chrome.tabs.sendMessage(overlayHostTabId, { type: "hide-switcher" });
+    } catch {
+        // Content script may not exist for chrome:// pages.
+    }
 }
 
 function resetSession() {
-    clearFinalizeTimer();
-    switcherWindowId = null;
     sourceWindowId = null;
+    overlayHostTabId = null;
     selectedTabId = null;
     lastTriggerAt = 0;
     cachedTabs = [];
 }
 
-async function buildTabCards(tabs, windowId) {
-    let previewDataUrl = null;
-
-    try {
-        previewDataUrl = await chrome.tabs.captureVisibleTab(windowId, {
-            format: "jpeg",
-            quality: 70,
-        });
-    } catch (error) {
-        console.warn("Failed to capture tab preview:", error);
-    }
-
+function buildTabCards(tabs) {
     return tabs.map((tab) => {
         const tabUrl = tab.url ?? "";
         const hostname = getHostname(tabUrl);
@@ -281,7 +223,7 @@ async function buildTabCards(tabs, windowId) {
             audible: Boolean(tab.audible),
             muted: Boolean(tab.mutedInfo?.muted),
             pinned: Boolean(tab.pinned),
-            previewDataUrl: tab.active ? previewDataUrl : null,
+            previewDataUrl: null,
         };
     });
 }

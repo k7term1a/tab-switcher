@@ -1,19 +1,36 @@
-const grid = document.getElementById("grid");
+const ROOT_ID = "__tab_switcher_overlay_root__";
 
 let tabs = [];
 let selectedTabId = null;
+let visible = false;
+let confirmOnAltRelease = false;
+let root = null;
+let grid = null;
 
 chrome.runtime.onMessage.addListener((message) => {
-    if (!message || message.type !== "render-switcher") {
+    if (!message || typeof message.type !== "string") {
         return;
     }
 
-    tabs = Array.isArray(message.tabs) ? message.tabs : [];
-    selectedTabId = message.selectedTabId ?? null;
-    render();
+    if (message.type === "render-switcher") {
+        tabs = Array.isArray(message.tabs) ? message.tabs : [];
+        selectedTabId = message.selectedTabId ?? null;
+        confirmOnAltRelease = Boolean(message.confirmOnAltRelease);
+        showOverlay();
+        render();
+        return;
+    }
+
+    if (message.type === "hide-switcher") {
+        hideOverlay();
+    }
 });
 
 window.addEventListener("keydown", (event) => {
+    if (!visible) {
+        return;
+    }
+
     if (event.key === "Tab") {
         event.preventDefault();
         sendMessage({
@@ -45,23 +62,67 @@ window.addEventListener("keydown", (event) => {
         event.preventDefault();
         sendMessage({ type: "cancel-switcher" });
     }
-});
+}, true);
 
-window.addEventListener("blur", () => {
-    // Keep behavior close to Alt+Tab: leaving switcher confirms current selection.
-    sendMessage({ type: "confirm-selection" });
-});
+window.addEventListener("keyup", (event) => {
+    if (!visible) {
+        return;
+    }
+
+    if (event.key === "Alt" && confirmOnAltRelease) {
+        event.preventDefault();
+        confirmOnAltRelease = false;
+        sendMessage({ type: "confirm-selection" });
+    }
+}, true);
 
 (async function bootstrap() {
     try {
         const state = await sendMessage({ type: "get-switcher-state" });
         tabs = Array.isArray(state?.tabs) ? state.tabs : [];
         selectedTabId = state?.selectedTabId ?? null;
-        render();
-    } catch (error) {
-        console.error("Failed to get switcher state:", error);
+        if (state?.isVisible) {
+            confirmOnAltRelease = true;
+            showOverlay();
+            render();
+        }
+    } catch {
+        // No-op: content script can load before service worker is awake.
     }
 })();
+
+function showOverlay() {
+    ensureElements();
+    if (!root) {
+        return;
+    }
+    visible = true;
+    root.classList.add("is-visible");
+}
+
+function hideOverlay() {
+    visible = false;
+    confirmOnAltRelease = false;
+    if (root) {
+        root.classList.remove("is-visible");
+    }
+}
+
+function ensureElements() {
+    if (root && grid) {
+        return;
+    }
+
+    root = document.getElementById(ROOT_ID);
+    if (!root) {
+        root = document.createElement("div");
+        root.id = ROOT_ID;
+        root.innerHTML = "<section class=\"ts-grid\" aria-label=\"Open tabs\"></section>";
+        document.documentElement.append(root);
+    }
+
+    grid = root.querySelector(".ts-grid");
+}
 
 function render() {
     if (!grid) {
@@ -73,7 +134,7 @@ function render() {
     for (const tab of tabs) {
         const card = document.createElement("button");
         card.type = "button";
-        card.className = "card" + (tab.id === selectedTabId ? " is-selected" : "");
+        card.className = "ts-card" + (tab.id === selectedTabId ? " is-selected" : "");
         card.addEventListener("mouseenter", () => {
             sendMessage({ type: "set-selection", tabId: tab.id });
         });
@@ -83,19 +144,19 @@ function render() {
         });
 
         const preview = document.createElement("img");
-        preview.className = "preview";
+        preview.className = "ts-preview";
         preview.alt = tab.title || "Tab preview";
-        preview.src = tab.previewDataUrl || buildFallbackPreview(tab);
+        preview.src = buildFallbackPreview(tab);
 
         const meta = document.createElement("div");
-        meta.className = "meta";
+        meta.className = "ts-meta";
 
         const title = document.createElement("h2");
-        title.className = "title";
+        title.className = "ts-title";
         title.textContent = tab.title || "Untitled tab";
 
         const host = document.createElement("div");
-        host.className = "host";
+        host.className = "ts-host";
 
         const favicon = document.createElement("img");
         favicon.src = tab.favIconUrl || "chrome://favicon/" + (tab.url || "");
@@ -107,7 +168,7 @@ function render() {
         host.append(favicon, hostText);
 
         const tags = document.createElement("div");
-        tags.className = "tags";
+        tags.className = "ts-tags";
         if (tab.active) {
             tags.append(createTag("Current"));
         }
@@ -129,7 +190,7 @@ function render() {
 
 function createTag(text) {
     const tag = document.createElement("span");
-    tag.className = "tag";
+    tag.className = "ts-tag";
     tag.textContent = text;
     return tag;
 }

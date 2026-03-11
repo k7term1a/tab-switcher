@@ -4,8 +4,7 @@
     "version": "1.0.0",
     "description": "Alt+Tab-like tab switcher overlay for Chrome tabs.",
     "permissions": [
-        "tabs",
-        "storage"
+        "tabs"
     ],
     "host_permissions": [
         "<all_urls>"
@@ -25,16 +24,18 @@
     "action": {
         "default_title": "Open Tab Switcher"
     },
-    "web_accessible_resources": [
+    "content_scripts": [
         {
-            "resources": [
-                "switcher.html",
-                "switcher.css",
-                "switcher.js"
-            ],
             "matches": [
                 "<all_urls>"
-            ]
+            ],
+            "js": [
+                "switcher.js"
+            ],
+            "css": [
+                "switcher.css"
+            ],
+            "run_at": "document_idle"
         }
     ]
 }
