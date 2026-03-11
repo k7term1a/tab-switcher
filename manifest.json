@@ -4,7 +4,8 @@
     "version": "1.0.0",
     "description": "Alt+Tab-like tab switcher overlay for Chrome tabs.",
     "permissions": [
-        "tabs"
+        "tabs",
+        "scripting"
     ],
     "host_permissions": [
         "<all_urls>"
@@ -19,6 +20,13 @@
                 "mac": "Alt+Q"
             },
             "description": "Open tab switcher overlay"
+        },
+        "open-tab-switcher-reverse": {
+            "suggested_key": {
+                "default": "Alt+W",
+                "mac": "Alt+W"
+            },
+            "description": "Open tab switcher overlay (reverse)"
         }
     },
     "action": {
@@ -32,10 +40,17 @@
             "js": [
                 "switcher.js"
             ],
-            "css": [
+            "run_at": "document_idle"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
                 "switcher.css"
             ],
-            "run_at": "document_idle"
+            "matches": [
+                "<all_urls>"
+            ]
         }
     ]
 }

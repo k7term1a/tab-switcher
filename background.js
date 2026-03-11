@@ -5,11 +5,16 @@ let overlayHostTabId = null;
 let selectedTabId = null;
 let lastTriggerAt = 0;
 let cachedTabs = [];
+const tabPreviewCache = new Map();
 
 chrome.commands.onCommand.addListener((command) => {
     if (command === "open-tab-switcher") {
         startOrAdvanceSwitcher().catch((error) => {
             console.error("Failed to open switcher:", error);
+        });
+    } else if (command === "open-tab-switcher-reverse") {
+        startOrAdvanceSwitcher(-1).catch((error) => {
+            console.error("Failed to open reverse switcher:", error);
         });
     }
 });
@@ -52,6 +57,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     }
 
+    if (message.type === "select-and-confirm") {
+        selectedTabId = message.tabId;
+        lastTriggerAt = Date.now();
+        confirmSelection()
+            .then(() => sendResponse({ ok: true }))
+            .catch((error) => sendResponse({ ok: false, error: String(error) }));
+        return true;
+    }
+
     if (message.type === "confirm-selection") {
         confirmSelection()
             .then(() => sendResponse({ ok: true }))
@@ -76,6 +90,8 @@ chrome.windows.onRemoved.addListener((windowId) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+    tabPreviewCache.delete(tabId);
+
     if (tabId === overlayHostTabId) {
         resetSession();
         return;
@@ -95,14 +111,33 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     });
 });
 
-async function startOrAdvanceSwitcher() {
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
+    await captureAndCachePreview(tabId, windowId);
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status !== "complete" || !tab.active || typeof tab.windowId !== "number") {
+        return;
+    }
+
+    await captureAndCachePreview(tabId, tab.windowId);
+});
+
+async function startOrAdvanceSwitcher(direction = 1) {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!activeTab || typeof activeTab.id !== "number" || typeof activeTab.windowId !== "number") {
         return;
     }
 
+    const overlayReady = await ensureOverlayReady(activeTab);
+    if (!overlayReady) {
+        console.warn("Tab switcher overlay cannot run on this page.");
+        return;
+    }
+
     const tabs = await chrome.tabs.query({ windowId: activeTab.windowId });
-    if (tabs.length <= 1) {
+    const switchableTabs = tabs.filter(isTabSwitchable);
+    if (switchableTabs.length <= 1) {
         return;
     }
 
@@ -112,23 +147,67 @@ async function startOrAdvanceSwitcher() {
         now - lastTriggerAt < SESSION_TIMEOUT_MS &&
         selectedTabId !== null;
 
-    const activeIndex = tabs.findIndex((tab) => tab.active);
-    const selectedIndex = tabs.findIndex((tab) => tab.id === selectedTabId);
+    const activeIndex = switchableTabs.findIndex((tab) => tab.id === activeTab.id);
+    const selectedIndex = switchableTabs.findIndex((tab) => tab.id === selectedTabId);
 
     let nextIndex = 0;
     if (sameSession && selectedIndex >= 0) {
-        nextIndex = (selectedIndex + 1) % tabs.length;
+        nextIndex = getWrappedIndex(selectedIndex + direction, switchableTabs.length);
     } else {
-        nextIndex = (Math.max(activeIndex, 0) + 1) % tabs.length;
+        nextIndex = getWrappedIndex(Math.max(activeIndex, 0) + direction, switchableTabs.length);
     }
 
     sourceWindowId = activeTab.windowId;
     overlayHostTabId = activeTab.id;
-    selectedTabId = tabs[nextIndex].id ?? null;
+    selectedTabId = switchableTabs[nextIndex].id ?? null;
     lastTriggerAt = now;
 
-    cachedTabs = buildTabCards(tabs);
+    await captureAndCachePreview(activeTab.id, activeTab.windowId);
+    cachedTabs = buildTabCards(switchableTabs);
     await broadcastState();
+}
+
+function getWrappedIndex(index, length) {
+    return ((index % length) + length) % length;
+}
+
+async function ensureOverlayReady(tab) {
+    if (typeof tab.id !== "number") {
+        return false;
+    }
+
+    if (!isInjectableUrl(tab.url)) {
+        return false;
+    }
+
+    try {
+        const response = await chrome.tabs.sendMessage(tab.id, { type: "ping-switcher" });
+        if (response?.ok) {
+            return true;
+        }
+    } catch {
+        // Content script is not available yet; inject below.
+    }
+
+    try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["switcher.js"] });
+        const response = await chrome.tabs.sendMessage(tab.id, { type: "ping-switcher" });
+        return Boolean(response?.ok);
+    } catch {
+        return false;
+    }
+}
+
+function isInjectableUrl(url) {
+    if (!url) {
+        return false;
+    }
+
+    return /^(https?|file):/i.test(url);
+}
+
+function isTabSwitchable(tab) {
+    return typeof tab?.id === "number" && isInjectableUrl(tab.url ?? "");
 }
 
 async function cycleSelection(direction) {
@@ -223,9 +302,28 @@ function buildTabCards(tabs) {
             audible: Boolean(tab.audible),
             muted: Boolean(tab.mutedInfo?.muted),
             pinned: Boolean(tab.pinned),
-            previewDataUrl: null,
+            previewDataUrl: tabPreviewCache.get(tab.id) ?? null,
         };
     });
+}
+
+async function captureAndCachePreview(tabId, windowId) {
+    if (typeof tabId !== "number" || typeof windowId !== "number") {
+        return;
+    }
+
+    try {
+        const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+            format: "jpeg",
+            quality: 58,
+        });
+
+        if (dataUrl) {
+            tabPreviewCache.set(tabId, dataUrl);
+        }
+    } catch {
+        // Some pages (edge://, chrome://, store pages) cannot be captured.
+    }
 }
 
 function getHostname(url) {
