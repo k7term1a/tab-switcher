@@ -1,3 +1,5 @@
+![Domo Demo](./demo.gif)
+
 # Tab Switcher Overlay (Chrome Extension)
 
 這個 extension 會在快捷鍵觸發時，顯示一個類似 Windows `Alt+Tab` 的分頁切換 overlay。

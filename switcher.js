@@ -4,6 +4,9 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
     window.__TAB_SWITCHER_OVERLAY_LOADED__ = true;
 
     const ROOT_ID = "__tab_switcher_overlay_root__";
+    const PREVIEW_WIDTH = 400;
+    const PREVIEW_HEIGHT = 225;
+    const previewResizeCache = new Map();
 
     let tabs = [];
     let selectedTabId = null;
@@ -118,6 +121,22 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
             requestCancelAndHide();
         }
     });
+
+    document.addEventListener(
+        "pointerdown",
+        (event) => {
+            if (!visible) {
+                return;
+            }
+
+            if (isEventInsideOverlay(event)) {
+                return;
+            }
+
+            requestCancelAndHide();
+        },
+        true
+    );
 
     (async function bootstrap() {
         try {
@@ -237,7 +256,21 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
             const preview = document.createElement("img");
             preview.className = "ts-preview";
             preview.alt = tab.title || "Tab preview";
-            preview.src = tab.previewDataUrl || buildFallbackPreview(tab);
+            preview.src = buildFallbackPreview(tab);
+
+            if (tab.previewDataUrl) {
+                normalizePreviewDataUrl(tab.previewDataUrl)
+                    .then((normalizedSrc) => {
+                        if (preview.isConnected) {
+                            preview.src = normalizedSrc;
+                        }
+                    })
+                    .catch(() => {
+                        if (preview.isConnected) {
+                            preview.src = tab.previewDataUrl;
+                        }
+                    });
+            }
 
             const closeBtn = document.createElement("button");
             closeBtn.type = "button";
@@ -341,6 +374,19 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
         });
     }
 
+    function isEventInsideOverlay(event) {
+        if (!root || !overlay || !grid) {
+            return false;
+        }
+
+        const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+        if (path.includes(root) || path.includes(overlay) || path.includes(grid)) {
+            return true;
+        }
+
+        return event.target instanceof Node ? root.contains(event.target) : false;
+    }
+
     function createTag(text) {
         const tag = document.createElement("span");
         tag.className = "ts-tag";
@@ -373,6 +419,67 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
   `;
 
         return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    }
+
+    async function normalizePreviewDataUrl(sourceDataUrl) {
+        if (!sourceDataUrl) {
+            throw new Error("Missing preview source");
+        }
+
+        const cached = previewResizeCache.get(sourceDataUrl);
+        if (cached) {
+            return cached;
+        }
+
+        const normalized = await resizePreviewDataUrl(sourceDataUrl, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+        previewResizeCache.set(sourceDataUrl, normalized);
+
+        // Keep cache bounded to avoid unbounded growth during long sessions.
+        if (previewResizeCache.size > 120) {
+            const firstKey = previewResizeCache.keys().next().value;
+            previewResizeCache.delete(firstKey);
+        }
+
+        return normalized;
+    }
+
+    function resizePreviewDataUrl(sourceDataUrl, targetWidth, targetHeight) {
+        return new Promise((resolve, reject) => {
+            const image = new Image();
+            image.decoding = "async";
+            image.onload = () => {
+                try {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = targetWidth;
+                    canvas.height = targetHeight;
+
+                    const ctx = canvas.getContext("2d");
+                    if (!ctx) {
+                        reject(new Error("Canvas context unavailable"));
+                        return;
+                    }
+
+                    ctx.fillStyle = "#2f343d";
+                    ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+                    const scale = Math.min(
+                        targetWidth / image.naturalWidth,
+                        targetHeight / image.naturalHeight
+                    );
+                    const drawWidth = image.naturalWidth * scale;
+                    const drawHeight = image.naturalHeight * scale;
+                    const drawX = (targetWidth - drawWidth) / 2;
+                    const drawY = (targetHeight - drawHeight) / 2;
+
+                    ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+                    resolve(canvas.toDataURL("image/jpeg", 0.78));
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            image.onerror = () => reject(new Error("Failed to load preview image"));
+            image.src = sourceDataUrl;
+        });
     }
 
     function getSafeFavicon(tab) {

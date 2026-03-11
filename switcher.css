@@ -48,14 +48,16 @@
     width: fit-content;
     max-width: min(1440px, calc(var(--ts-overlay-width, 100vw) - 80px));
     max-height: min(calc(var(--ts-overlay-height, 100dvh) - 40px), 920px);
-    padding: 28px;
+    padding: 24px;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 400px));
     justify-content: center;
     align-items: start;
     gap: 20px;
     pointer-events: auto;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable both-edges;
     border-radius: 6px;
     border: 1px solid rgba(182, 188, 198, 0.24);
     background:
@@ -107,7 +109,6 @@
     color: var(--ts-text);
     position: relative;
     max-width: 400px;
-    aspect-ratio: 16 / 11.2;
     align-self: start;
 }
 
@@ -165,6 +166,7 @@
     padding: 10px 12px 8px;
     display: block;
     background: rgba(14, 16, 19, 0.48);
+    min-width: 0;
 }
 
 .ts-title {
@@ -183,6 +185,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    min-width: 0;
 }
 
 .ts-title-icon {
