@@ -1,0 +1,40 @@
+{
+    "manifest_version": 3,
+    "name": "Tab Switcher Overlay",
+    "version": "1.0.0",
+    "description": "Alt+Tab-like tab switcher overlay for Chrome tabs.",
+    "permissions": [
+        "tabs",
+        "storage"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "commands": {
+        "open-tab-switcher": {
+            "suggested_key": {
+                "default": "Alt+Q",
+                "mac": "Alt+Q"
+            },
+            "description": "Open tab switcher overlay"
+        }
+    },
+    "action": {
+        "default_title": "Open Tab Switcher"
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "switcher.html",
+                "switcher.css",
+                "switcher.js"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}
