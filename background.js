@@ -80,12 +80,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message.type === "close-tab") {
+        closeTabFromSwitcher(message.tabId)
+            .then(() => sendResponse({ ok: true }))
+            .catch((error) => sendResponse({ ok: false, error: String(error) }));
+        return true;
+    }
+
     return false;
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {
     if (windowId === sourceWindowId) {
         resetSession();
+    }
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+    if (sourceWindowId === null || overlayHostTabId === null) {
+        return;
+    }
+
+    // Alt+Tab can move focus out of Chrome and skip keyup events in the page.
+    if (windowId !== sourceWindowId) {
+        cancelSwitcher().catch((error) => {
+            console.error("Failed to cancel switcher on focus change:", error);
+        });
     }
 });
 
@@ -112,11 +132,19 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
+    if (overlayHostTabId !== null) {
+        return;
+    }
+
     await captureAndCachePreview(tabId, windowId);
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status !== "complete" || !tab.active || typeof tab.windowId !== "number") {
+        return;
+    }
+
+    if (overlayHostTabId !== null) {
         return;
     }
 
@@ -162,7 +190,9 @@ async function startOrAdvanceSwitcher(direction = 1) {
     selectedTabId = switchableTabs[nextIndex].id ?? null;
     lastTriggerAt = now;
 
-    await captureAndCachePreview(activeTab.id, activeTab.windowId);
+    if (!sameSession) {
+        await captureAndCachePreview(activeTab.id, activeTab.windowId);
+    }
     cachedTabs = buildTabCards(switchableTabs);
     await broadcastState();
 }
@@ -247,6 +277,37 @@ async function confirmSelection() {
 async function cancelSwitcher() {
     await hideOverlay();
     resetSession();
+}
+
+async function closeTabFromSwitcher(tabId) {
+    if (typeof tabId !== "number") {
+        return;
+    }
+
+    try {
+        await chrome.tabs.remove(tabId);
+    } catch {
+        return;
+    }
+
+    if (sourceWindowId === null) {
+        return;
+    }
+
+    const tabsInWindow = await chrome.tabs.query({ windowId: sourceWindowId });
+    const switchableTabs = tabsInWindow.filter(isTabSwitchable);
+
+    if (!switchableTabs.length) {
+        await cancelSwitcher();
+        return;
+    }
+
+    if (!switchableTabs.some((tab) => tab.id === selectedTabId)) {
+        selectedTabId = switchableTabs[0]?.id ?? null;
+    }
+
+    cachedTabs = buildTabCards(switchableTabs);
+    await broadcastState();
 }
 
 async function broadcastState() {

@@ -105,6 +105,20 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
         true
     );
 
+    window.addEventListener(
+        "blur",
+        () => {
+            requestCancelAndHide();
+        },
+        true
+    );
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            requestCancelAndHide();
+        }
+    });
+
     (async function bootstrap() {
         try {
             const state = await sendMessage({ type: "get-switcher-state" });
@@ -202,8 +216,10 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
         grid.innerHTML = "";
 
         for (const tab of tabs) {
-            const card = document.createElement("button");
-            card.type = "button";
+            const card = document.createElement("div");
+            card.setAttribute("role", "button");
+            card.tabIndex = 0;
+            card.dataset.tabId = String(tab.id);
             card.className = "ts-card" + (tab.id === selectedTabId ? " is-selected" : "");
             card.addEventListener("mousedown", (event) => {
                 if (event.button !== 0) {
@@ -223,11 +239,27 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
             preview.alt = tab.title || "Tab preview";
             preview.src = tab.previewDataUrl || buildFallbackPreview(tab);
 
+            const closeBtn = document.createElement("button");
+            closeBtn.type = "button";
+            closeBtn.className = "ts-close-tab";
+            closeBtn.setAttribute("aria-label", "Close tab");
+            closeBtn.textContent = "\u00d7";
+            closeBtn.addEventListener("mousedown", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            closeBtn.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                sendMessage({ type: "close-tab", tabId: tab.id });
+            });
+
             const meta = document.createElement("div");
             meta.className = "ts-meta";
 
             const title = document.createElement("h2");
             title.className = "ts-title";
+
             const titleIcon = document.createElement("img");
             titleIcon.className = "ts-title-icon";
             titleIcon.src = getSafeFavicon(tab);
@@ -237,6 +269,10 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
             titleText.textContent = tab.title || "Untitled tab";
 
             title.append(titleIcon, titleText);
+
+            const header = document.createElement("div");
+            header.className = "ts-header";
+            header.append(title, closeBtn);
 
             const tags = document.createElement("div");
             tags.className = "ts-tags";
@@ -253,10 +289,56 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
                 tags.append(createTag("Muted"));
             }
 
-            meta.append(title, tags);
-            card.append(meta, preview);
+            const previewWrap = document.createElement("div");
+            previewWrap.className = "ts-preview-wrap";
+            previewWrap.append(preview, tags);
+
+            meta.append(header);
+            card.append(meta, previewWrap);
             grid.append(card);
         }
+
+        scrollSelectedCardIntoView();
+    }
+
+    function scrollSelectedCardIntoView() {
+        if (!grid || selectedTabId === null) {
+            return;
+        }
+
+        const selected = grid.querySelector(`.ts-card[data-tab-id="${selectedTabId}"]`);
+        if (!selected) {
+            return;
+        }
+
+        const gridRect = grid.getBoundingClientRect();
+        const cardRect = selected.getBoundingClientRect();
+
+        const overflowTop = cardRect.top < gridRect.top;
+        const overflowBottom = cardRect.bottom > gridRect.bottom;
+        const overflowLeft = cardRect.left < gridRect.left;
+        const overflowRight = cardRect.right > gridRect.right;
+
+        if (!overflowTop && !overflowBottom && !overflowLeft && !overflowRight) {
+            return;
+        }
+
+        selected.scrollIntoView({
+            block: "nearest",
+            inline: "nearest",
+            behavior: "smooth",
+        });
+    }
+
+    function requestCancelAndHide() {
+        if (!visible) {
+            return;
+        }
+
+        hideOverlay();
+        sendMessage({ type: "cancel-switcher" }).catch(() => {
+            // Ignore failures when runtime is not available during focus transitions.
+        });
     }
 
     function createTag(text) {

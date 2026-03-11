@@ -45,12 +45,15 @@
 }
 
 .ts-grid {
-    width: min(1120px, 92vw);
-    max-height: min(calc(var(--ts-overlay-height, 100dvh) - 80px), 760px);
-    padding: 20px;
+    width: fit-content;
+    max-width: min(1440px, calc(var(--ts-overlay-width, 100vw) - 80px));
+    max-height: min(calc(var(--ts-overlay-height, 100dvh) - 40px), 920px);
+    padding: 28px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 400px));
+    justify-content: center;
+    align-items: start;
+    gap: 20px;
     pointer-events: auto;
     overflow: auto;
     border-radius: 6px;
@@ -60,6 +63,28 @@
     -webkit-backdrop-filter: blur(12px) saturate(110%);
     backdrop-filter: blur(12px) saturate(110%);
     box-shadow: 0 20px 80px rgba(0, 0, 0, 0.45);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(220, 226, 236, 0.45) rgba(255, 255, 255, 0.08);
+}
+
+.ts-grid::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+.ts-grid::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+}
+
+.ts-grid::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(226, 232, 241, 0.55), rgba(175, 184, 198, 0.5));
+    border-radius: 999px;
+    border: 2px solid rgba(19, 22, 28, 0.35);
+}
+
+.ts-grid::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(237, 242, 250, 0.72), rgba(194, 204, 219, 0.66));
 }
 
 .ts-card {
@@ -80,6 +105,22 @@
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
     color: var(--ts-text);
+    position: relative;
+    max-width: 400px;
+    aspect-ratio: 16 / 11.2;
+    align-self: start;
+}
+
+.ts-preview-wrap {
+    position: relative;
+    grid-row: 2;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(130deg, #535963, #2f343d);
+    overflow: hidden;
 }
 
 .ts-card.is-selected {
@@ -89,13 +130,14 @@
 
 .ts-preview {
     width: 100%;
-    height: auto;
-    grid-row: 2;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
     display: block;
-    aspect-ratio: 16 / 9;
-    object-fit: cover;
+    object-fit: contain !important;
+    object-position: center center;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    background: linear-gradient(130deg, #666c76, #3b4048);
+    background: transparent;
     transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
@@ -110,34 +152,37 @@
     }
 
     .ts-grid {
-        width: min(100%, 96vw);
+        width: min(100%, 92vw);
         max-height: min(calc(var(--ts-overlay-height, 100dvh) - 30px), 82dvh);
-        padding: 14px;
-        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        padding: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 400px));
+        justify-content: center;
     }
 }
 
 .ts-meta {
     grid-row: 1;
-    padding: 10px 12px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "title tags";
-    gap: 0 8px;
+    padding: 10px 12px 8px;
+    display: block;
     background: rgba(14, 16, 19, 0.48);
 }
 
 .ts-title {
-    grid-area: title;
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 8px;
     margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-size: 14px;
     font-weight: 600;
+}
+
+.ts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
 .ts-title-icon {
@@ -154,13 +199,17 @@
 }
 
 .ts-tags {
-    grid-area: tags;
+    position: absolute;
+    top: 8px;
+    right: 8px;
     display: flex;
     gap: 6px;
     margin-top: 0;
     flex-wrap: wrap;
     justify-content: flex-end;
     align-items: center;
+    z-index: 2;
+    max-width: calc(100% - 16px);
 }
 
 .ts-tag {
@@ -175,4 +224,31 @@
 .ts-card:focus-visible {
     outline: 2px solid var(--ts-focus);
     outline-offset: 2px;
+}
+
+.ts-close-tab {
+    all: unset;
+    position: relative;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    color: rgba(255, 255, 255, 0.94);
+    background: transparent;
+    border: 1px solid transparent;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.ts-close-tab:hover {
+    background: rgba(210, 48, 48, 0.88);
+    border-color: rgba(255, 192, 192, 0.8);
+}
+
+.ts-close-tab:active {
+    transform: scale(0.96);
 }
