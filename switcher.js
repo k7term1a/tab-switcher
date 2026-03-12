@@ -417,7 +417,22 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
     function createTag(text) {
         const tag = document.createElement("span");
         tag.className = "ts-tag";
+        // blod text
+        tag.style.fontWeight = "bold";
         tag.textContent = text;
+
+        if (text === "Current") { //green background color
+            tag.style.backgroundColor = "rgb(50, 205, 50)";
+        }
+        if (text === "Pinned") { // red background color
+            tag.style.backgroundColor = "rgb(255, 69, 0)";
+        }
+        if (text === "Playing Audio") { //orange background color
+            tag.style.backgroundColor = "rgb(255, 165, 0)";
+        }
+        if (text === "Muted") { //grey background color
+            tag.style.backgroundColor = "rgb(128, 128, 128)";
+        }
         return tag;
     }
 

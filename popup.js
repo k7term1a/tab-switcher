@@ -3,10 +3,12 @@ const PREVIEW_WIDTH_MIN = 280;
 const PREVIEW_WIDTH_MAX = 640;
 const PREVIEW_WIDTH_STEP = 20;
 const STORAGE_KEY = "previewWidth";
+const PREVIEW_CACHE_STORAGE_KEY = "tabPreviewCache";
 
 const previewWidthInput = document.getElementById("previewWidth");
 const previewWidthNumberInput = document.getElementById("previewWidthNumber");
 const saveState = document.getElementById("saveState");
+const cacheStats = document.getElementById("cacheStats");
 const shortcutList = document.getElementById("shortcutList");
 const openShortcutsButton = document.getElementById("openShortcuts");
 
@@ -54,7 +56,17 @@ async function initialize() {
         await chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
     });
 
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== "local" || !changes?.[PREVIEW_CACHE_STORAGE_KEY]) {
+            return;
+        }
+
+        const newValue = changes[PREVIEW_CACHE_STORAGE_KEY].newValue;
+        renderPreviewCacheStats(newValue);
+    });
+
     await renderCommandShortcuts();
+    await refreshPreviewCacheStats();
 }
 
 async function loadPreviewWidth() {
@@ -113,4 +125,62 @@ async function renderCommandShortcuts() {
         item.textContent = "找不到快捷鍵設定";
         shortcutList.append(item);
     }
+}
+
+async function refreshPreviewCacheStats() {
+    const result = await chrome.storage.local.get(PREVIEW_CACHE_STORAGE_KEY);
+    renderPreviewCacheStats(result?.[PREVIEW_CACHE_STORAGE_KEY]);
+}
+
+function renderPreviewCacheStats(storedValue) {
+    const entries = normalizePreviewCacheEntries(storedValue);
+    const bytes = estimatePreviewCacheBytes(entries);
+    cacheStats.textContent = `快取統計：${entries.length} 筆 / ${formatBytes(bytes)}`;
+}
+
+function normalizePreviewCacheEntries(storedValue) {
+    if (!storedValue) {
+        return [];
+    }
+
+    if (Array.isArray(storedValue)) {
+        return storedValue.filter(
+            (entry) =>
+                Array.isArray(entry) &&
+                entry.length === 2 &&
+                typeof entry[0] === "string" &&
+                typeof entry[1] === "string"
+        );
+    }
+
+    if (typeof storedValue === "object") {
+        return Object.entries(storedValue).filter(
+            ([tabId, previewDataUrl]) =>
+                typeof tabId === "string" && typeof previewDataUrl === "string"
+        );
+    }
+
+    return [];
+}
+
+function estimatePreviewCacheBytes(entries) {
+    try {
+        const payload = JSON.stringify({ [PREVIEW_CACHE_STORAGE_KEY]: entries });
+        return new TextEncoder().encode(payload).length;
+    } catch {
+        return 0;
+    }
+}
+
+function formatBytes(bytes) {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+
+    const kib = bytes / 1024;
+    if (kib < 1024) {
+        return `${kib.toFixed(1)} KiB`;
+    }
+
+    return `${(kib / 1024).toFixed(2)} MiB`;
 }

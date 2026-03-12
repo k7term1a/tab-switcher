@@ -3,6 +3,10 @@ const BLOCKED_URL_PREFIXES = [
     "https://chrome.google.com/webstore",
     "https://chromewebstore.google.com",
 ];
+const PREVIEW_STORAGE_KEY = "tabPreviewCache";
+const PREVIEW_SAVE_DEBOUNCE_MS = 450;
+const LOCAL_STORAGE_QUOTA_BYTES = chrome.storage.local.QUOTA_BYTES || 10 * 1024 * 1024;
+const PREVIEW_STORAGE_MAX_BYTES = Math.floor(LOCAL_STORAGE_QUOTA_BYTES * 0.9);
 
 let sourceWindowId = null;
 let overlayHostTabId = null;
@@ -10,6 +14,8 @@ let selectedTabId = null;
 let lastTriggerAt = 0;
 let cachedTabs = [];
 const tabPreviewCache = new Map();
+let previewSaveTimer = null;
+const previewCacheReadyPromise = loadPreviewCacheFromStorage();
 
 chrome.commands.onCommand.addListener((command) => {
     if (command === "open-tab-switcher") {
@@ -115,6 +121,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     tabPreviewCache.delete(tabId);
+    queuePersistPreviewCache();
 
     if (tabId === overlayHostTabId) {
         resetSession();
@@ -156,6 +163,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 async function startOrAdvanceSwitcher(direction = 1) {
+    await previewCacheReadyPromise;
+
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!activeTab || typeof activeTab.id !== "number" || typeof activeTab.windowId !== "number") {
         return;
@@ -321,6 +330,8 @@ async function cancelSwitcher() {
 }
 
 async function closeTabFromSwitcher(tabId) {
+    await previewCacheReadyPromise;
+
     if (typeof tabId !== "number") {
         return;
     }
@@ -410,6 +421,8 @@ function buildTabCards(tabs) {
 }
 
 async function captureAndCachePreview(tabId, windowId) {
+    await previewCacheReadyPromise;
+
     if (typeof tabId !== "number" || typeof windowId !== "number") {
         return;
     }
@@ -421,10 +434,144 @@ async function captureAndCachePreview(tabId, windowId) {
         });
 
         if (dataUrl) {
-            tabPreviewCache.set(tabId, dataUrl);
+            setPreviewCacheEntry(tabId, dataUrl);
+            queuePersistPreviewCache();
         }
     } catch {
         // Some pages (edge://, chrome://, store pages) cannot be captured.
+    }
+}
+
+async function loadPreviewCacheFromStorage() {
+    try {
+        const result = await chrome.storage.local.get(PREVIEW_STORAGE_KEY);
+        const stored = result?.[PREVIEW_STORAGE_KEY];
+        if (!stored) {
+            return;
+        }
+
+        if (Array.isArray(stored)) {
+            for (const entry of stored) {
+                if (!Array.isArray(entry) || entry.length !== 2) {
+                    continue;
+                }
+
+                const [tabIdValue, previewDataUrl] = entry;
+                const tabId = Number(tabIdValue);
+                if (!Number.isInteger(tabId)) {
+                    continue;
+                }
+
+                if (typeof previewDataUrl !== "string" || !previewDataUrl.startsWith("data:image/")) {
+                    continue;
+                }
+
+                setPreviewCacheEntry(tabId, previewDataUrl);
+            }
+
+            return;
+        }
+
+        if (typeof stored !== "object") {
+            return;
+        }
+
+        for (const [tabIdString, previewDataUrl] of Object.entries(stored)) {
+            const tabId = Number(tabIdString);
+            if (!Number.isInteger(tabId)) {
+                continue;
+            }
+
+            if (typeof previewDataUrl !== "string" || !previewDataUrl.startsWith("data:image/")) {
+                continue;
+            }
+
+            setPreviewCacheEntry(tabId, previewDataUrl);
+        }
+
+        queuePersistPreviewCache();
+    } catch (error) {
+        console.warn("Failed to load preview cache from local storage:", error);
+    }
+}
+
+function queuePersistPreviewCache() {
+    if (previewSaveTimer !== null) {
+        clearTimeout(previewSaveTimer);
+    }
+
+    previewSaveTimer = setTimeout(() => {
+        previewSaveTimer = null;
+        persistPreviewCache().catch((error) => {
+            console.warn("Failed to persist preview cache:", error);
+        });
+    }, PREVIEW_SAVE_DEBOUNCE_MS);
+}
+
+async function persistPreviewCache() {
+    const serializedEntries = buildSerializedPreviewEntries();
+    const trimmedEntries = trimEntriesToStorageBudget(serializedEntries, PREVIEW_STORAGE_MAX_BYTES);
+    replacePreviewCacheFromSerializedEntries(trimmedEntries);
+
+    await chrome.storage.local.set({
+        [PREVIEW_STORAGE_KEY]: trimmedEntries,
+    });
+}
+
+function setPreviewCacheEntry(tabId, previewDataUrl) {
+    if (!Number.isInteger(tabId) || typeof previewDataUrl !== "string") {
+        return;
+    }
+
+    if (tabPreviewCache.has(tabId)) {
+        tabPreviewCache.delete(tabId);
+    }
+
+    tabPreviewCache.set(tabId, previewDataUrl);
+}
+
+function buildSerializedPreviewEntries() {
+    return Array.from(tabPreviewCache.entries(), ([tabId, previewDataUrl]) => [
+        String(tabId),
+        previewDataUrl,
+    ]);
+}
+
+function trimEntriesToStorageBudget(entries, maxBytes) {
+    const normalizedEntries = Array.isArray(entries) ? [...entries] : [];
+    while (
+        normalizedEntries.length > 0 &&
+        estimatePreviewStorageBytes(normalizedEntries) > maxBytes
+    ) {
+        normalizedEntries.shift();
+    }
+
+    return normalizedEntries;
+}
+
+function estimatePreviewStorageBytes(entries) {
+    try {
+        const payload = JSON.stringify({ [PREVIEW_STORAGE_KEY]: entries });
+        return new TextEncoder().encode(payload).length;
+    } catch {
+        return Number.MAX_SAFE_INTEGER;
+    }
+}
+
+function replacePreviewCacheFromSerializedEntries(entries) {
+    tabPreviewCache.clear();
+    for (const entry of entries) {
+        if (!Array.isArray(entry) || entry.length !== 2) {
+            continue;
+        }
+
+        const tabId = Number(entry[0]);
+        const previewDataUrl = entry[1];
+        if (!Number.isInteger(tabId) || typeof previewDataUrl !== "string") {
+            continue;
+        }
+
+        tabPreviewCache.set(tabId, previewDataUrl);
     }
 }
 
