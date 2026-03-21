@@ -177,7 +177,7 @@ async function startOrAdvanceSwitcher(direction = 1) {
     }
 
     const tabs = await chrome.tabs.query({ windowId: activeTab.windowId });
-    const switchableTabs = tabs.filter(isTabSwitchable);
+    const switchableTabs = sortTabsByRecentUsage(tabs.filter(isTabSwitchable));
     if (switchableTabs.length <= 1) {
         return;
     }
@@ -347,7 +347,7 @@ async function closeTabFromSwitcher(tabId) {
     }
 
     const tabsInWindow = await chrome.tabs.query({ windowId: sourceWindowId });
-    const switchableTabs = tabsInWindow.filter(isTabSwitchable);
+    const switchableTabs = sortTabsByRecentUsage(tabsInWindow.filter(isTabSwitchable));
 
     if (!switchableTabs.length) {
         await cancelSwitcher();
@@ -418,6 +418,21 @@ function buildTabCards(tabs) {
             previewDataUrl: tabPreviewCache.get(tab.id) ?? null,
         };
     });
+}
+
+function sortTabsByRecentUsage(tabs) {
+    return [...tabs]
+        .map((tab, index) => ({ tab, index }))
+        .sort((left, right) => {
+            const leftAccessed = Number(left.tab.lastAccessed) || 0;
+            const rightAccessed = Number(right.tab.lastAccessed) || 0;
+            if (rightAccessed !== leftAccessed) {
+                return rightAccessed - leftAccessed;
+            }
+
+            return left.index - right.index;
+        })
+        .map((entry) => entry.tab);
 }
 
 async function captureAndCachePreview(tabId, windowId) {
