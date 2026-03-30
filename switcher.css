@@ -127,7 +127,6 @@
 
 .ts-card.is-selected {
     border-color: var(--ts-focus);
-    transform: translateY(-2px);
 }
 
 .ts-preview {
@@ -138,9 +137,13 @@
     display: block;
     object-fit: contain !important;
     object-position: center center;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid transparent;
     background: transparent;
     transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.ts-card.is-selected .ts-preview {
+    border-color: rgba(255, 255, 255, 0.92);
 }
 
 .ts-card:hover .ts-preview {
