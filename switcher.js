@@ -20,6 +20,7 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
     let grid = null;
     let viewportListenersBound = false;
     let previewWidth = DEFAULT_PREVIEW_WIDTH;
+    let altKeyHeld = false;
 
     initializeSettings().catch((error) => {
         console.warn("Failed to initialize switcher settings:", error);
@@ -59,6 +60,12 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
             confirmOnAltRelease = Boolean(message.confirmOnAltRelease);
             showOverlay();
             render();
+            // If Alt was already released before this message arrived (quick-tap),
+            // confirm immediately. If Alt is still held, wait for the keyup event.
+            if (confirmOnAltRelease && !altKeyHeld) {
+                confirmOnAltRelease = false;
+                sendMessage({ type: "confirm-selection" }).catch(() => {});
+            }
             return;
         }
 
@@ -70,6 +77,10 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
     window.addEventListener(
         "keydown",
         (event) => {
+            if (event.key === "Alt") {
+                altKeyHeld = true;
+            }
+
             if (!visible) {
                 return;
             }
@@ -120,6 +131,10 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
     window.addEventListener(
         "keyup",
         (event) => {
+            if (event.key === "Alt") {
+                altKeyHeld = false;
+            }
+
             if (!visible) {
                 return;
             }
@@ -133,9 +148,18 @@ if (window.__TAB_SWITCHER_OVERLAY_LOADED__) {
         true
     );
 
+    // When focus returns to the page (e.g., after Alt is released), reset altKeyHeld
+    // in case the Alt keyup event was intercepted by Chrome and never reached us.
+    window.addEventListener("focus", () => { altKeyHeld = false; }, true);
+
     window.addEventListener(
         "blur",
         () => {
+            // If Alt is held, the blur is caused by Chrome's menu bar stealing focus
+            // for an Alt+key shortcut — don't cancel the switcher in this case.
+            if (altKeyHeld) {
+                return;
+            }
             requestCancelAndHide();
         },
         true
